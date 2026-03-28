@@ -104,7 +104,10 @@ func findArgPassedUnclosedTx(f *ssa.Function, txTyp types.Type, methods []*types
 			if !ok || v == nil {
 				continue
 			}
-			if !types.Identical(v.Type(), txTyp) {
+			// SSA uses internal synthetic types (e.g. opaqueType for range iterators and defer stacks)
+			// that are not standard go/types types. types.Identical panics on these via
+			// the default case in its type switch. Skip any such values safely.
+			if !safeIdentical(v.Type(), txTyp) {
 				continue
 			}
 			refs := v.Referrers()
@@ -129,6 +132,18 @@ func findArgPassedUnclosedTx(f *ssa.Function, txTyp types.Type, methods []*types
 		}
 	}
 	return result
+}
+
+// safeIdentical wraps types.Identical and recovers from panics that can occur when
+// SSA synthetic types (e.g. opaqueType for range iterators) are passed to types.Identical,
+// which expects only standard go/types types in its internal type switch.
+func safeIdentical(x, y types.Type) (identical bool) {
+	defer func() {
+		if recover() != nil {
+			identical = false
+		}
+	}()
+	return types.Identical(x, y)
 }
 
 // isArgOf reports whether instr is a call instruction and v is passed as one of its arguments.
