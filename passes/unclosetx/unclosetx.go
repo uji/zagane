@@ -125,6 +125,20 @@ func findArgPassedUnclosedTx(f *ssa.Function, txTyp types.Type, methods []*types
 				if isArgOf(ref, v) {
 					isPassedAsArg = true
 				}
+				// When the concrete *ReadOnlyTransaction is converted to an interface
+				// (e.g. RODB) via MakeInterface before being passed as an argument,
+				// the direct referrer is a MakeInterface instruction, not a call.
+				// Follow the MakeInterface referrers to detect this pattern.
+				if mi, ok := ref.(*ssa.MakeInterface); ok {
+					miRefs := mi.Referrers()
+					if miRefs != nil {
+						for _, miRef := range *miRefs {
+							if isArgOf(miRef, mi) {
+								isPassedAsArg = true
+							}
+						}
+					}
+				}
 			}
 			if isPassedAsArg && !hasClose {
 				result = append(result, instr)
